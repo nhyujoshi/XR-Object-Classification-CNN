@@ -122,27 +122,6 @@ public class MLObjectClassifier : MonoBehaviour
         return null;
     }
 
-    private Texture2D CreateNHWCTexture(Texture2D originalImage)
-    {
-        // Create a texture with the desired format
-        Texture2D processedTexture = new Texture2D(224, 224, TextureFormat.RGB24, false);
-
-        // First resize the image to 224x224
-        RenderTexture rt = RenderTexture.GetTemporary(224, 224);
-        Graphics.Blit(originalImage, rt);
-        RenderTexture previousRT = RenderTexture.active;
-        RenderTexture.active = rt;
-        processedTexture.ReadPixels(new Rect(0, 0, 224, 224), 0, 0);
-        processedTexture.Apply();
-        RenderTexture.active = previousRT;
-        RenderTexture.ReleaseTemporary(rt);
-
-        // Now we have a properly sized texture, but might need to adjust for NHWC format
-        // For this approach, we'll try using the existing Unity Sentis converter in reverse
-
-        return processedTexture;
-    }
-
     private Texture2D PreprocessImage(Texture2D originalImage)
     {
         // Create a target texture with the dimensions expected by the model (224x224 is common)
