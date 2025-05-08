@@ -57,28 +57,60 @@ public class MLObjectClassifier : MonoBehaviour
 
         try
         {
-            // Preprocess the image to match model input requirements
+            // Preprocess the image
             Texture2D processedImage = PreprocessImage(objectImage);
 
-            // Convert the image to a tensor
-            using (var tensor = TextureConverter.ToTensor(processedImage))
+            // Get input name
+            string inputName = runtimeModel.inputs[0].name;
+
+            // Get raw pixel data
+            Color[] pixels = processedImage.GetPixels();
+
+            // Create a tensor with the EXACT shape our model expects
+            var shape = new TensorShape(1, 224, 224, 3); // NHWC format
+            var tensor = new Tensor<float>(shape);
+
+            // Get tensor array for direct manipulation
+            float[] tensorData = new float[1 * 224 * 224 * 3];
+
+            // Fill with pixel data in NHWC format
+            for (int h = 0; h < 224; h++)
             {
-                // Execute the model with the image tensor as input
-                worker.Schedule(tensor);
-
-                // Get the output tensor (assuming the output tensor name is "output")
-                using (var output = worker.PeekOutput() as Tensor<float>)
+                for (int w = 0; w < 224; w++)
                 {
-                    // Get the class with the highest probability
-                    float[] probabilities = output.DownloadToArray();
-                    int classIndex = GetHighestProbabilityIndex(probabilities);
+                    Color pixel = pixels[h * 224 + w];
 
-                    if (classIndex < classNames.Count)
-                    {
-                        string objectName = classNames[classIndex];
-                        Debug.Log($"Classified object as: {objectName}");
-                        return objectName;
-                    }
+                    // Calculate base index in NHWC format [batch, height, width, channel]
+                    int baseIdx = ((0 * 224) + h) * 224 * 3 + w * 3;
+
+                    // Fill R, G, B channels
+                    tensorData[baseIdx + 0] = pixel.r;
+                    tensorData[baseIdx + 1] = pixel.g;
+                    tensorData[baseIdx + 2] = pixel.b;
+                }
+            }
+
+            // Upload the data
+            tensor.Upload(tensorData);
+
+            // Set as input
+            worker.SetInput(inputName, tensor);
+
+            // Execute
+            worker.Schedule();
+
+            // Get output
+            using (var output = worker.PeekOutput() as Tensor<float>)
+            {
+                // Get the class with the highest probability
+                float[] probabilities = output.DownloadToArray();
+                int classIndex = GetHighestProbabilityIndex(probabilities);
+
+                if (classIndex < classNames.Count)
+                {
+                    string objectName = classNames[classIndex];
+                    Debug.Log($"Classified object as: {objectName}");
+                    return objectName;
                 }
             }
         }
@@ -88,6 +120,27 @@ public class MLObjectClassifier : MonoBehaviour
         }
 
         return null;
+    }
+
+    private Texture2D CreateNHWCTexture(Texture2D originalImage)
+    {
+        // Create a texture with the desired format
+        Texture2D processedTexture = new Texture2D(224, 224, TextureFormat.RGB24, false);
+
+        // First resize the image to 224x224
+        RenderTexture rt = RenderTexture.GetTemporary(224, 224);
+        Graphics.Blit(originalImage, rt);
+        RenderTexture previousRT = RenderTexture.active;
+        RenderTexture.active = rt;
+        processedTexture.ReadPixels(new Rect(0, 0, 224, 224), 0, 0);
+        processedTexture.Apply();
+        RenderTexture.active = previousRT;
+        RenderTexture.ReleaseTemporary(rt);
+
+        // Now we have a properly sized texture, but might need to adjust for NHWC format
+        // For this approach, we'll try using the existing Unity Sentis converter in reverse
+
+        return processedTexture;
     }
 
     private Texture2D PreprocessImage(Texture2D originalImage)
